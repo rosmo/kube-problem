@@ -12,6 +12,10 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+locals {
+  use_local_resources = true
+}
+
 provider "google" {
 }
 
@@ -125,11 +129,106 @@ provider "helm" {
   }
 }
 
+# To test, comment out either the kubernetes resources or the example-deployment
+# module
+
 # Example deployment of Nginx that uses a shared NFS volume to serve docroot
 module "example-deployment" {
+  count = local.use_local_resources ? 0 : 1
+
   source = "./modules/example-deployment"
 
   depends_on = [
     module.gke,
   ]
+}
+
+# Add namespace for running Nginx
+resource "kubernetes_namespace" "nginx-namespace" {
+  count = local.use_local_resources ? 1 : 0
+  metadata {
+    name = "example"
+  }
+}
+
+# Add Nginx "Hello World" deployment
+resource "kubernetes_deployment" "nginx-test" {
+  count = local.use_local_resources ? 1 : 0
+
+  metadata {
+    name      = "nginx-test"
+    namespace = kubernetes_namespace.nginx-namespace.0.metadata.0.name
+    labels = {
+      app = "example"
+    }
+  }
+
+  spec {
+    replicas = 3
+
+    selector {
+      match_labels = {
+        app = "example"
+      }
+    }
+
+    template {
+      metadata {
+        labels = {
+          app = "example"
+        }
+        annotations = {
+          # This is deprecated, but Terraform doesn't support seccomp field yet
+          "seccomp.security.alpha.kubernetes.io/pod" = "runtime/default"
+        }
+      }
+
+      spec {
+        automount_service_account_token = false
+        security_context {
+          run_as_group    = 101
+          run_as_user     = 101
+          run_as_non_root = true
+        }
+        container {
+          image = "nginxinc/nginx-unprivileged:latest"
+          name  = "nginx-test"
+
+          port {
+            container_port = 8080
+          }
+
+          security_context {
+            allow_privilege_escalation = false
+            privileged                 = false
+            run_as_non_root            = true
+            capabilities {
+              drop = ["NET_RAW"]
+            }
+          }
+
+          resources {
+            limits = {
+              cpu    = "0.5"
+              memory = "512Mi"
+            }
+            requests = {
+              cpu    = "250m"
+              memory = "50Mi"
+            }
+          }
+
+          liveness_probe {
+            http_get {
+              path = "/"
+              port = 8080
+            }
+
+            initial_delay_seconds = 3
+            period_seconds        = 3
+          }
+        }
+      }
+    }
+  }
 }
