@@ -75,7 +75,7 @@ module "gke" {
   project_id = var.project_id
   region     = var.region
 
-  cluster_name = "haven-compliance-cluster"
+  cluster_name = "kube-problem"
 
   gke_network              = module.network.network_name
   gke_subnet               = module.network.gke_subnet.name
