@@ -149,6 +149,9 @@ resource "kubernetes_namespace" "nginx-namespace" {
   metadata {
     name = "example"
   }
+  depends_on = [
+    module.gke
+  ]
 }
 
 # Add Nginx "Hello World" deployment
